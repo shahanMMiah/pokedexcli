@@ -4,14 +4,18 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/shahanMMiah/pokedexcli/internal"
 )
 
 type Config struct {
 	Previous string
 	Next     string
+	cache    *internal.Cache
 }
 
 type CliCommands struct {
@@ -38,25 +42,37 @@ func (c *Config) commandHelp() error {
 	return nil
 }
 
-func getMapData(url string) (map[string]interface{}, error) {
+func getMapData(url string, cache *internal.Cache) (map[string]interface{}, error) {
 
-	req, rerr := http.NewRequest("GET", url, nil)
+	data, exists := cache.Get(url)
+	if !exists {
+		fmt.Printf("Getting request for %s\n", url)
+		req, rerr := http.NewRequest("GET", url, nil)
 
-	if rerr != nil {
-		return nil, rerr
+		if rerr != nil {
+			return nil, rerr
+		}
+
+		res, reserr := http.DefaultClient.Do(req)
+		if reserr != nil {
+			return nil, reserr
+		}
+
+		defer res.Body.Close()
+		body, berr := io.ReadAll(res.Body)
+		if berr != nil {
+			return nil, berr
+		}
+		data = body
+		cache.Add(url, data)
+
+	} else {
+		fmt.Printf("Found %s in cache\n", url)
 	}
-
-	res, reserr := http.DefaultClient.Do(req)
-	if reserr != nil {
-		return nil, reserr
-	}
-
-	defer res.Body.Close()
 
 	var mapData map[string]interface{}
 
-	decoder := json.NewDecoder(res.Body)
-	derr := decoder.Decode(&mapData)
+	derr := json.Unmarshal(data, &mapData)
 
 	if derr != nil {
 		return nil, derr
@@ -71,7 +87,8 @@ func (c *Config) commandMapsBack() error {
 		fmt.Println("you're on the first page")
 		return nil
 	}
-	mapData, merr := getMapData(c.Previous)
+
+	mapData, merr := getMapData(c.Previous, c.cache)
 	if merr != nil {
 		return merr
 	}
@@ -97,7 +114,7 @@ func (c *Config) commandMapsFoward() error {
 
 	}
 
-	mapData, merr := getMapData(c.Next)
+	mapData, merr := getMapData(c.Next, c.cache)
 	if merr != nil {
 		return merr
 	}
@@ -145,7 +162,7 @@ func getCommandMap(config *Config) map[string]CliCommands {
 func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
-	config := Config{Previous: "", Next: ""}
+	config := Config{Previous: "", Next: "", cache: internal.NewCache(5000000000)}
 
 	for {
 
