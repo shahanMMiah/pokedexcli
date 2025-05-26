@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/shahanMMiah/pokedexcli/internal"
 )
@@ -34,7 +35,7 @@ func cleanInput(text string) []string {
 	return sliced
 }
 func (c *Config) commandHelp() error {
-	fmt.Println("Welcome to the Pokedex!\nusage:\n")
+	fmt.Println("Welcome to the Pokedex!\nusage:")
 
 	for name, command := range getCommandMap(c) {
 		fmt.Printf("%s: %s\n", name, command.description)
@@ -162,15 +163,20 @@ func getCommandMap(config *Config) map[string]CliCommands {
 func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
-	config := Config{Previous: "", Next: "", cache: internal.NewCache(5000000000)}
+	config := Config{Previous: "", Next: "", cache: internal.NewCache(10000 * time.Millisecond)}
 
 	for {
 
 		fmt.Print("Pokedex > ")
 
 		scanner.Scan()
-		firstWord := cleanInput(scanner.Text())[0]
+		words := cleanInput(scanner.Text())
 
+		if len(words) < 1 {
+			continue
+		}
+
+		firstWord := words[0]
 		fmt.Printf("Your command was: %s \n", firstWord)
 
 		command, ok := getCommandMap(&config)[firstWord]

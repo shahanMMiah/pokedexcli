@@ -40,13 +40,25 @@ func (p *Cache) Get(name string) ([]byte, bool) {
 }
 
 func (p *Cache) reapLoop(interval time.Duration) {
-	p.Mute.Lock()
-	defer p.Mute.Unlock()
+	ticker := time.NewTicker(interval)
+	for {
+		if len(p.CacheMap) > 0 {
 
-	for name, _ := range p.CacheMap {
-		if time.Since(p.CacheMap[name].createdAt) > interval {
-			delete(p.CacheMap, name)
+			select {
+			case tick := <-ticker.C:
+				p.Mute.Lock()
+
+				for name := range p.CacheMap {
+					after := tick.After(p.CacheMap[name].createdAt)
+					if after {
+
+						delete(p.CacheMap, name)
+					}
+				}
+				p.Mute.Unlock()
+			default:
+				continue
+			}
 		}
-
 	}
 }
