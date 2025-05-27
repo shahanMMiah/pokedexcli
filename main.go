@@ -13,9 +13,12 @@ import (
 	"github.com/shahanMMiah/pokedexcli/internal"
 )
 
+const LOCATIONURL string = "https://pokeapi.co/api/v2/location-area/"
+
 type Config struct {
 	Previous string
 	Next     string
+	Param    []string
 	cache    *internal.Cache
 }
 
@@ -43,29 +46,40 @@ func (c *Config) commandHelp() error {
 	return nil
 }
 
-func getMapData(url string, cache *internal.Cache) (map[string]interface{}, error) {
+func addCacheRequest(url string, cache *internal.Cache) ([]byte, error) {
+	fmt.Printf("Getting request for %s\n", url)
+	req, rerr := http.NewRequest("GET", url, nil)
+
+	if rerr != nil {
+		return nil, rerr
+	}
+
+	res, reserr := http.DefaultClient.Do(req)
+	if reserr != nil {
+		return nil, reserr
+	}
+
+	defer res.Body.Close()
+	body, berr := io.ReadAll(res.Body)
+	if berr != nil {
+		return nil, berr
+	}
+	cache.Add(url, body)
+
+	return body, nil
+
+}
+
+func getData(url string, cache *internal.Cache) (map[string]interface{}, error) {
 
 	data, exists := cache.Get(url)
 	if !exists {
-		fmt.Printf("Getting request for %s\n", url)
-		req, rerr := http.NewRequest("GET", url, nil)
-
-		if rerr != nil {
-			return nil, rerr
+		body, derr := addCacheRequest(url, cache)
+		if derr != nil {
+			return nil, derr
 		}
 
-		res, reserr := http.DefaultClient.Do(req)
-		if reserr != nil {
-			return nil, reserr
-		}
-
-		defer res.Body.Close()
-		body, berr := io.ReadAll(res.Body)
-		if berr != nil {
-			return nil, berr
-		}
 		data = body
-		cache.Add(url, data)
 
 	} else {
 		fmt.Printf("Found %s in cache\n", url)
@@ -82,6 +96,7 @@ func getMapData(url string, cache *internal.Cache) (map[string]interface{}, erro
 	return mapData, nil
 
 }
+
 func (c *Config) commandMapsBack() error {
 
 	if c.Previous == "" {
@@ -89,7 +104,7 @@ func (c *Config) commandMapsBack() error {
 		return nil
 	}
 
-	mapData, merr := getMapData(c.Previous, c.cache)
+	mapData, merr := getData(c.Previous, c.cache)
 	if merr != nil {
 		return merr
 	}
@@ -111,11 +126,11 @@ func (c *Config) commandMapsBack() error {
 
 func (c *Config) commandMapsFoward() error {
 	if c.Next == "" {
-		c.Next = "https://pokeapi.co/api/v2/location-area/"
+		c.Next = LOCATIONURL
 
 	}
 
-	mapData, merr := getMapData(c.Next, c.cache)
+	mapData, merr := getData(c.Next, c.cache)
 	if merr != nil {
 		return merr
 	}
@@ -140,6 +155,33 @@ func (c *Config) commandMapsFoward() error {
 	return nil
 }
 
+func (c *Config) commandExplore() error {
+
+	fmt.Println("Exploring Pokemon...")
+	if len(c.Param) < 1 {
+		return fmt.Errorf("no location name specified")
+	}
+
+	url := fmt.Sprintf("%s/%s", LOCATIONURL, c.Param[0])
+	locData, lerr := getData(url, c.cache)
+	if lerr != nil {
+		return lerr
+	}
+
+	encounters := locData["pokemon_encounters"].([]interface{})
+
+	fmt.Println("Found Pokemon:")
+	for ind := range encounters {
+		pokemonData := encounters[ind].(map[string]interface{})["pokemon"]
+
+		fmt.Printf(" - %s\n", pokemonData.(map[string]interface{})["name"])
+
+	}
+
+	return nil
+
+}
+
 func (c *Config) commandExit() error {
 
 	fmt.Println("Closing the Pokedex... Goodbye!")
@@ -152,10 +194,11 @@ func (c *Config) commandExit() error {
 func getCommandMap(config *Config) map[string]CliCommands {
 
 	return map[string]CliCommands{
-		"exit": CliCommands{"exit", "Exit the Pokedex", config.commandExit},
-		"help": CliCommands{"help", "Displays a help message", config.commandHelp},
-		"map":  CliCommands{"map", "Displays next 20 location areas in the Pokemon world", config.commandMapsFoward},
-		"mapb": CliCommands{"map", "Displays next 20 location areas in the Pokemon world", config.commandMapsBack},
+		"exit":    {"exit", "Exit the Pokedex", config.commandExit},
+		"help":    {"help", "Displays a help message", config.commandHelp},
+		"map":     {"map", "Displays next 20 location areas in the Pokemon world", config.commandMapsFoward},
+		"mapb":    {"map", "Displays last 20 location areas in the Pokemon world", config.commandMapsBack},
+		"explore": {"explore", "Displays list of pokemon in specific location", config.commandExplore},
 	}
 
 }
@@ -177,6 +220,11 @@ func main() {
 		}
 
 		firstWord := words[0]
+
+		if len(words) > 1 {
+			config.Param = words[1:]
+		}
+
 		fmt.Printf("Your command was: %s \n", firstWord)
 
 		command, ok := getCommandMap(&config)[firstWord]
@@ -184,7 +232,12 @@ func main() {
 			fmt.Println("Unknown command")
 			continue
 		}
-		command.callback()
+		callErr := command.callback()
+		if callErr != nil {
+			fmt.Println(callErr)
+		}
+
+		config.Param = make([]string, 0)
 
 	}
 
