@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"os"
 	"strings"
@@ -13,19 +15,25 @@ import (
 	"github.com/shahanMMiah/pokedexcli/internal"
 )
 
-const LOCATIONURL string = "https://pokeapi.co/api/v2/location-area/"
+const BASEURL string = "https://pokeapi.co/api/v2/"
 
 type Config struct {
 	Previous string
 	Next     string
 	Param    []string
 	cache    *internal.Cache
+	Pokedex  map[string]Pokemon
 }
 
 type CliCommands struct {
 	name        string
 	description string
 	callback    func() error
+}
+
+type Pokemon struct {
+	Name     string
+	base_exp float64
 }
 
 func cleanInput(text string) []string {
@@ -126,7 +134,7 @@ func (c *Config) commandMapsBack() error {
 
 func (c *Config) commandMapsFoward() error {
 	if c.Next == "" {
-		c.Next = LOCATIONURL
+		c.Next = fmt.Sprintf("%s/%s/", BASEURL, "location-area")
 
 	}
 
@@ -162,7 +170,7 @@ func (c *Config) commandExplore() error {
 		return fmt.Errorf("no location name specified")
 	}
 
-	url := fmt.Sprintf("%s/%s", LOCATIONURL, c.Param[0])
+	url := fmt.Sprintf("%s/%s", fmt.Sprintf("%s/%s/", BASEURL, "location-area"), c.Param[0])
 	locData, lerr := getData(url, c.cache)
 	if lerr != nil {
 		return lerr
@@ -178,6 +186,60 @@ func (c *Config) commandExplore() error {
 
 	}
 
+	return nil
+
+}
+
+func (c *Config) commandCatchPokemon() error {
+
+	if len(c.Param) < 1 {
+		return fmt.Errorf("no pokemon name specified")
+	}
+
+	fmt.Printf("Throwing a Pokeball at %s...\n", c.Param[0])
+
+	url := fmt.Sprintf("%s/%s", fmt.Sprintf("%s/%s/", BASEURL, "pokemon"), c.Param[0])
+	pokeData, lerr := getData(url, c.cache)
+
+	if lerr != nil {
+		return lerr
+	}
+
+	base_exp := pokeData["base_experience"]
+	var min int64 = 50
+	var max int64 = 310
+	bigVal, randerr := rand.Int(rand.Reader, big.NewInt(max-min))
+
+	if randerr != nil {
+		return randerr
+	}
+
+	randVal := float64(bigVal.Int64() + min)
+	if randVal >= base_exp.(float64) {
+
+		fmt.Printf("%s was caught!\n", c.Param[0])
+		c.Pokedex[c.Param[0]] = Pokemon{Name: c.Param[0], base_exp: base_exp.(float64)}
+	} else {
+		fmt.Printf("%s escaped %v - %v \n", c.Param[0], randVal, base_exp)
+	}
+
+	return nil
+
+}
+
+func (c *Config) commandViewPokemon() error {
+
+	if len(c.Param) < 1 {
+		fmt.Printf("Current Pokedex : %v\n", c.Pokedex)
+		return nil
+	}
+
+	pokemon, exists := c.Pokedex[c.Param[0]]
+	if !exists {
+		return fmt.Errorf("%v not found on pokedex", c.Param[0])
+	}
+
+	fmt.Printf("%v : %v\n", c.Param[0], pokemon)
 	return nil
 
 }
@@ -199,6 +261,8 @@ func getCommandMap(config *Config) map[string]CliCommands {
 		"map":     {"map", "Displays next 20 location areas in the Pokemon world", config.commandMapsFoward},
 		"mapb":    {"map", "Displays last 20 location areas in the Pokemon world", config.commandMapsBack},
 		"explore": {"explore", "Displays list of pokemon in specific location", config.commandExplore},
+		"catch":   {"catch", "attemped to catch a specific pokemon", config.commandCatchPokemon},
+		"view":    {"view", "see catched pokemon", config.commandViewPokemon},
 	}
 
 }
@@ -206,7 +270,7 @@ func getCommandMap(config *Config) map[string]CliCommands {
 func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
-	config := Config{Previous: "", Next: "", cache: internal.NewCache(10000 * time.Millisecond)}
+	config := Config{Previous: "", Next: "", cache: internal.NewCache(100000 * time.Millisecond), Pokedex: make(map[string]Pokemon, 0)}
 
 	for {
 
