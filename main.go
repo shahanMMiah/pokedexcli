@@ -32,8 +32,26 @@ type CliCommands struct {
 }
 
 type Pokemon struct {
-	Name     string
-	base_exp float64
+	past_types               []interface{}
+	species                  map[string]interface{}
+	base_experience          float64
+	held_items               []interface{}
+	id                       float64
+	stats                    []interface{}
+	weight                   float64
+	forms                    []interface{}
+	is_default               bool
+	sprites                  map[string]interface{}
+	name                     string
+	past_abilities           []interface{}
+	types                    []interface{}
+	abilities                []interface{}
+	game_indices             []interface{}
+	height                   float64
+	order                    float64
+	cries                    map[string]interface{}
+	location_area_encounters string
+	moves                    []interface{}
 }
 
 func cleanInput(text string) []string {
@@ -190,6 +208,32 @@ func (c *Config) commandExplore() error {
 
 }
 
+func makePokemon(data map[string]interface{}) Pokemon {
+
+	return Pokemon{
+		past_types:               data["past_types"].([]interface{}),
+		species:                  data["species"].(map[string]interface{}),
+		base_experience:          data["base_experience"].(float64),
+		held_items:               data["held_items"].([]interface{}),
+		id:                       data["id"].(float64),
+		stats:                    data["stats"].([]interface{}),
+		weight:                   data["weight"].(float64),
+		forms:                    data["forms"].([]interface{}),
+		is_default:               data["is_default"].(bool),
+		sprites:                  data["sprites"].(map[string]interface{}),
+		name:                     data["name"].(string),
+		past_abilities:           data["past_abilities"].([]interface{}),
+		types:                    data["types"].([]interface{}),
+		abilities:                data["abilities"].([]interface{}),
+		game_indices:             data["game_indices"].([]interface{}),
+		height:                   data["height"].(float64),
+		order:                    data["order"].(float64),
+		cries:                    data["cries"].(map[string]interface{}),
+		location_area_encounters: data["location_area_encounters"].(string),
+		moves:                    data["moves"].([]interface{}),
+	}
+
+}
 func (c *Config) commandCatchPokemon() error {
 
 	if len(c.Param) < 1 {
@@ -218,28 +262,46 @@ func (c *Config) commandCatchPokemon() error {
 	if randVal >= base_exp.(float64) {
 
 		fmt.Printf("%s was caught!\n", c.Param[0])
-		c.Pokedex[c.Param[0]] = Pokemon{Name: c.Param[0], base_exp: base_exp.(float64)}
+
+		c.Pokedex[c.Param[0]] = makePokemon(pokeData)
 	} else {
-		fmt.Printf("%s escaped %v - %v \n", c.Param[0], randVal, base_exp)
+		fmt.Printf("%s escaped\n", c.Param[0])
 	}
 
 	return nil
 
 }
 
-func (c *Config) commandViewPokemon() error {
+func (c *Config) commandInspectPokemon() error {
 
 	if len(c.Param) < 1 {
-		fmt.Printf("Current Pokedex : %v\n", c.Pokedex)
-		return nil
+		return fmt.Errorf("%v not pokemon specified", c.Param[0])
+
 	}
 
-	pokemon, exists := c.Pokedex[c.Param[0]]
+	pokemenon, exists := c.Pokedex[c.Param[0]]
 	if !exists {
 		return fmt.Errorf("%v not found on pokedex", c.Param[0])
 	}
+	pokemonstats := pokemenon.stats
 
-	fmt.Printf("%v : %v\n", c.Param[0], pokemon)
+	stats := []any{pokemenon.name, pokemenon.height, pokemenon.weight}
+	for _, statData := range pokemonstats {
+		statVal := statData.(map[string]interface{})["base_stat"]
+		stats = append(stats, statVal)
+
+	}
+	statsLn := fmt.Sprintf(
+		"Name: %v\nHeight: %v\nWeight: %v\nStats:\n-hp: %v\n-attack: %v\n-deffense: %v\n-special-attack: %v\n-special-defense: %v\n-speed: %v\nTypes:\n",
+		stats...,
+	)
+
+	for _, pType := range pokemenon.types {
+		typ := pType.(map[string]interface{})["type"]
+		statsLn += fmt.Sprintf("- %v\n", typ.(map[string]interface{})["name"])
+	}
+
+	fmt.Println(statsLn)
 	return nil
 
 }
@@ -253,6 +315,17 @@ func (c *Config) commandExit() error {
 
 }
 
+func (c *Config) commandPokedex() error {
+
+	prntLn := "Your Pokedex:\n"
+	for name := range c.Pokedex {
+		prntLn += fmt.Sprintf("- %v\n", name)
+	}
+
+	fmt.Print(prntLn)
+	return nil
+}
+
 func getCommandMap(config *Config) map[string]CliCommands {
 
 	return map[string]CliCommands{
@@ -262,7 +335,8 @@ func getCommandMap(config *Config) map[string]CliCommands {
 		"mapb":    {"map", "Displays last 20 location areas in the Pokemon world", config.commandMapsBack},
 		"explore": {"explore", "Displays list of pokemon in specific location", config.commandExplore},
 		"catch":   {"catch", "attemped to catch a specific pokemon", config.commandCatchPokemon},
-		"view":    {"view", "see catched pokemon", config.commandViewPokemon},
+		"inspect": {"inspect", "inspect data of catched pokemon", config.commandInspectPokemon},
+		"pokedex": {"pokedex", "show names of pokemon in pokedex", config.commandPokedex},
 	}
 
 }
